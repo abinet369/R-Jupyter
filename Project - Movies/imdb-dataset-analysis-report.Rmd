@@ -1,0 +1,175 @@
+---
+title: "IMDB(2006-2016)"
+author: "Ambuj Bhardwaj"
+date: "19 April 2019"
+output: 
+  html_document:
+    toc: true
+    code_folding: hide      
+---
+
+````{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+````
+
+#Introduction
+
+Dataset available at <https://www.kaggle.com/PromptCloudHQ/imdb-data>
+
+We will be using *IMDB-Movie-Data.csv* for this project.
+
+```{r, include=TRUE}
+imdb <- read.csv(file = "../input/IMDB-Movie-Data.csv", header = TRUE, stringsAsFactors = FALSE)
+```
+#Data Exploration
+
+Before we start manipulating the data, first we will check the structure of our dataset.
+
+```{r}
+str(imdb)
+```
+
+From above output we can see that there are 1000 observations or row and 12 variables or columns in imdb dataframe that we created in our first code block.
+
+Let us check the column names in our dataset
+```{r}
+colnames(imdb)
+```
+
+Here two column names at index 8 and 11 looks too long. Let's rename these two.
+
+```{r}
+colnames(imdb)[c(8,11)] <- c("Runtime", "Revenue")
+colnames(imdb)
+```
+
+
+```{r, warning= FALSE, message= FALSE}
+#load libraries that we will use in our EDA process
+library(ggplot2)
+library(d3Tree)
+library(dplyr)
+library(wordcloud)
+```
+
+##Exploration by Year
+
+Using d3Tree package to group the movies by their year of release to form an interactive branching relationship plot.
+
+```{r}
+yt <- imdb %>% group_by(Year) %>% arrange(Year) %>% select(Year, Title) %>% count(Year, Title)
+d3tree(list(root = df2tree(rootname = 'IMDB',struct = as.data.frame(yt)), layout = 'collapse'))
+```
+
+Using ggplot2 package to generate barplots to get more depth.
+
+```{r}
+ggplot(data = imdb, aes(x = factor(Year))) + geom_bar(stat = 'count') + geom_text(stat = 'count', aes(label = ..count..), vjust = -1) + theme(panel.background = element_rect('transparent')) + geom_hline(yintercept = c(0,100,200,300)) + xlab("Year") + ylab("Number of Movies")
+```
+
+Lets have a glance at the Revenue of Movies each year
+
+```{r}
+newimdb<-imdb
+newimdb$Revenue[which(is.na(newimdb$Revenue))]<-0 #cleaning NA values in Revenue
+ggplot(data = newimdb, aes(x = factor(Year), y = Revenue, fill = factor(Year)))+ geom_violin() + xlab("Year") + theme_bw()
+```
+
+```{r}
+ggplot(data = newimdb, aes(x = factor(Year), y = Revenue)) + geom_boxplot() + xlab("Year")
+```
+
+
+```{r}
+year_revenue<-aggregate(Revenue~Year, data = newimdb , sum)
+ggplot(data = year_revenue, aes(factor(Year), Revenue, fill = factor(Year))) + 
+  geom_bar(stat = 'identity') +
+  geom_text(aes(label = Revenue), vjust = -0.75, cex = 2.5) + 
+  xlab("Year") + ylab("Revenue in Millions")
+```
+
+##Exploration by Rating
+
+Let us also see how the ratings affect the Revenue of Movies. But first we must do some processing to club the ratings into intervals.
+
+```{r}
+rr<- aggregate(Revenue~Rating, data = newimdb, sum)
+rr$Rating_Interval<- cut(rr$Rating, breaks = seq(from = 1, to = 10, by = 1))
+head(rr)
+```
+Now we can create a boxplot to see how the ratings have affected the Revenue.
+
+```{r}
+ggplot(data = rr, aes(x = factor(Rating_Interval), y = Revenue, fill = Rating_Interval)) + geom_boxplot() + xlab("Ratings")
+```
+
+To further drilldown into this we must also see how many movies were categorised in all interval ranges
+```{r}
+newimdb$ri<- cut(newimdb$Rating, breaks = seq(1,10, by =1))
+rc <- newimdb %>% group_by(ri) %>% count(ri)
+ggplot(data =  rc, aes(x = ri, y = n)) + geom_bar(stat = 'identity') + 
+  xlab("Rating") + ylab("Number of MOvies")
+```
+
+Now it is clear that maximum number of movie ratings ranges between 6-8. Hence the Revenue is more for the movies in this range of ratings. This clearly indicates that Revenues is directly proportional to the Ratings received.
+
+##Exploration by Genre
+
+Let us now check the data with respect to Genre of movies
+
+```{r}
+#gets unique words in all genre column
+w<-unique(unlist(strsplit(unique(newimdb$Genre), ",")))
+
+#UDF for counting the appearance of unique words
+wc<- function(x){
+  length(grep(x, newimdb$Genre))
+}
+
+genrecount<- as.data.frame(sapply(w,wc))
+genrecount$genre <- rownames(genrecount)
+colnames(genrecount)<- c("count","genre")
+
+#Arranging in ascending order by count
+genrecount<- arrange(genrecount, count)
+
+#plotting bar grapgh
+ggplot(data = genrecount, aes(x = genre, y = count)) + 
+  geom_bar(stat = 'identity') + 
+  coord_flip()
+```
+
+From above bar graph it is clear that Drama and Action movies are fairly popular, followed by Comedy and Adventure.
+
+
+```{r}
+#UDF for counting Revenue distribution by Genre
+RevSum<- function(x){
+  sum(newimdb[(grep(x,newimdb$Genre)), "Revenue"])  
+}
+
+rev<-as.data.frame(sapply(w,RevSum))
+rev$genre <- rownames(rev)
+colnames(rev)[1] <- "Revenue"
+
+
+ggplot(data = rev, aes(x = genre, y = Revenue)) + 
+  geom_bar(stat = 'identity') +
+  xlab("Genre") + ylab("Revenue in Millions") +
+  coord_flip()
+```
+
+Above grapgh clearly visualises the distribution of Revenue by Genre of the movie.
+
+#Conclusion
+```{r}
+wordcloud(genrecount$genre, genrecount$count, scale = c(3,0.5))
+```
+
+1. Positive trend in number of movie release every year.
+2. Revenue of movies is increasing YoY.
+3. Maximum number of movies were rated between 6-8.
+4. Drama movies tends to dominate the genre.
+5. Action and Adventure movies bring most Revenue.
+
+
